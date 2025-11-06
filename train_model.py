@@ -18,7 +18,7 @@ data_dir = "dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/New
 train_dir = data_dir + "/train"
 valid_dir = data_dir + "/valid"
 diseases = os.listdir(train_dir)
-test_dir = data_dir + "/test"
+test_dir =  "dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/test"
 
 # printing the disease names
 # print(diseases)
