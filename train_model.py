@@ -18,10 +18,10 @@ data_dir = "dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/New
 train_dir = data_dir + "/train"
 valid_dir = data_dir + "/valid"
 diseases = os.listdir(train_dir)
-
+test_dir = data_dir + "/test"
 
 # printing the disease names
-print(diseases)
+# print(diseases)
 
 
 print("Total disease classes are: {}".format(len(diseases)))
@@ -364,11 +364,10 @@ plot_losses(history)
 
 plot_lrs(history)
 
-test_dir = "../input/new-plant-diseases-dataset/test"
 test = ImageFolder(test_dir, transform=transforms.ToTensor())
 
 
-test_images = sorted(os.listdir(test_dir + '/test')) # since images in test folder are in alphabetical order
+test_images = sorted(os.listdir(test_dir)) # since images in test folder are in alphabetical order
 
 
 def predict_image(img, model):
