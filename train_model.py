@@ -10,7 +10,8 @@ import torch.nn.functional as F # for functions for calculating loss
 import torchvision.transforms as transforms   # for transforming images into tensors 
 from torchvision.utils import make_grid       # for data checking
 from torchvision.datasets import ImageFolder  # for working with classes and images
-from torchsummary import summary              # for getting the summary of our model
+from torchsummary import summary           
+from tqdm import tqdm# for getting the summary of our model
 
 
 data_dir = "dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/New Plant Diseases Dataset(Augmented)/New Plant Diseases Dataset(Augmented)"
@@ -253,45 +254,62 @@ def get_lr(optimizer):
         return param_group['lr']
     
 
+
+
 def fit_OneCycle(epochs, max_lr, model, train_loader, val_loader, weight_decay=0,
                 grad_clip=None, opt_func=torch.optim.SGD):
     torch.cuda.empty_cache()
     history = []
     
     optimizer = opt_func(model.parameters(), max_lr, weight_decay=weight_decay)
-    # scheduler for one cycle learniing rate
     sched = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr, epochs=epochs, steps_per_epoch=len(train_loader))
     
-    print("começando treino...")
+    print("Starting training...")
+    
     for epoch in range(epochs):
-        # Training
         model.train()
         train_losses = []
         lrs = []
-        for batch in train_loader:
+
+        # Training loop with progress bar
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}", leave=True)
+
+        for batch in progress_bar:
             loss = model.training_step(batch)
-            train_losses.append(loss)
+            train_losses.append(loss.item())     # store as float
+
             loss.backward()
-            
-            # gradient clipping
-            if grad_clip: 
+
+            if grad_clip:
                 nn.utils.clip_grad_value_(model.parameters(), grad_clip)
-                
+
             optimizer.step()
             optimizer.zero_grad()
-            
-            # recording and updating learning rates
+
             lrs.append(get_lr(optimizer))
             sched.step()
-            
-    
+
+            # --- GPU MEMORY USAGE ---
+            if torch.cuda.is_available():
+                mem = torch.cuda.memory_allocated() / 1024**2
+                progress_bar.set_postfix(loss=loss.item(), gpu_mem=f"{mem:.1f}MB")
+
+        # Validation step
         # validation
         result = evaluate(model, val_loader)
         result['train_loss'] = torch.stack(train_losses).mean().item()
+        result['val_loss'] = result['val_loss'].item()
+        result['val_accuracy'] = result['val_accuracy'].item()
         result['lrs'] = lrs
         model.epoch_end(epoch, result)
         history.append(result)
-        
+
+
+        # Print max GPU memory used this epoch
+        if torch.cuda.is_available():
+            max_mem = torch.cuda.max_memory_allocated() / 1024**2
+            print(f"Max GPU Memory Used: {max_mem:.2f} MB")
+
     return history
 
 
@@ -319,13 +337,17 @@ def plot_accuracies(history):
 
 def plot_losses(history):
     train_losses = [x.get('train_loss') for x in history]
-    val_losses = [x['val_loss'] for x in history]
+    val_losses = [x['val_loss'].item() if hasattr(x['val_loss'], 'item') else float(x['val_loss'])
+                  for x in history]
+
     plt.plot(train_losses, '-bx')
     plt.plot(val_losses, '-rx')
     plt.xlabel('epoch')
     plt.ylabel('loss')
     plt.legend(['Training', 'Validation'])
-    plt.title('Loss vs. No. of epochs');
+    plt.title('Loss vs. No. of epochs')
+    plt.show()
+
     
 def plot_lrs(history):
     lrs = np.concatenate([x.get('lrs', []) for x in history])
