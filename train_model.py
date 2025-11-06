@@ -296,13 +296,15 @@ def fit_OneCycle(epochs, max_lr, model, train_loader, val_loader, weight_decay=0
 
         # Validation step
         # validation
+        # Validation step
         result = evaluate(model, val_loader)
-        result['train_loss'] = torch.stack(train_losses).mean().item()
+        result['train_loss'] = np.mean(train_losses)     # ✅ FIXED
         result['val_loss'] = result['val_loss'].item()
         result['val_accuracy'] = result['val_accuracy'].item()
         result['lrs'] = lrs
         model.epoch_end(epoch, result)
         history.append(result)
+
 
 
         # Print max GPU memory used this epoch
