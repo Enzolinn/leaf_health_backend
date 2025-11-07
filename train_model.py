@@ -298,7 +298,7 @@ def fit_OneCycle(epochs, max_lr, model, train_loader, val_loader, weight_decay=0
         # validation
         # Validation step
         result = evaluate(model, val_loader)
-        result['train_loss'] = np.mean(train_losses)     # ✅ FIXED
+        result['train_loss'] = np.mean(train_losses)     
         result['val_loss'] = result['val_loss'].item()
         result['val_accuracy'] = result['val_accuracy'].item()
         result['lrs'] = lrs
@@ -328,7 +328,8 @@ history += fit_OneCycle(epochs, max_lr, model, train_dl, valid_dl,
                              weight_decay=1e-4, 
                              opt_func=opt_func)
 
-
+PATH = './plant-disease-model.pth'  
+torch.save(model.state_dict(), PATH)
 
 def plot_accuracies(history):
     accuracies = [x['val_accuracy'] for x in history]
@@ -348,7 +349,7 @@ def plot_losses(history):
     plt.ylabel('loss')
     plt.legend(['Training', 'Validation'])
     plt.title('Loss vs. No. of epochs')
-    plt.show()
+    plt.savefig("Loss vs. No. of epochs")
 
     
 def plot_lrs(history):
@@ -356,7 +357,7 @@ def plot_lrs(history):
     plt.plot(lrs)
     plt.xlabel('Batch no.')
     plt.ylabel('Learning rate')
-    plt.title('Learning Rate vs. Batch no.');
+    plt.title('Learning Rate vs. Batch no.')
 
 plot_accuracies(history)
 
@@ -394,5 +395,3 @@ for i, (img, label) in enumerate(test):
     print('Label:', test_images[i], ', Predicted:', predict_image(img, model))
 
 # saving to the kaggle working directory
-PATH = './plant-disease-model.pth'  
-torch.save(model.state_dict(), PATH)
