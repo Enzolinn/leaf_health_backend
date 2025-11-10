@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 # ===============================
 # CONFIGURAÇÕES
 # ===============================
-MODEL_PATH = Path("work/best_model.pth")
+MODEL_PATH = Path("work_a100/best_model.pth")
 USE_CUDA = True
 IMG_SIZE = 224
 MASK_THRESHOLD = 0.5   # pixel > 0.5 = área destacada

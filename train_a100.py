@@ -315,7 +315,7 @@ for epoch in range(1, EPOCHS + 1):
     print(f"Epoch {epoch} summary: train_acc={epoch_train_acc:.4f}, val_acc={val_acc:.4f}, val_loss={val_loss:.4f}, time={(t1-t0):.1f}s")
 
 # final report
-print(f"[✓] Training finished. Best val_acc = {best_val_acc:.4f}. Best model at {BEST_PATH}")
+print(f"Training finished. Best val_acc = {best_val_acc:.4f}. Best model at {BEST_PATH}")
 
 # Save training metadata
 meta = {
