@@ -2,3 +2,4 @@
 .venv
 dataset/datasets/*
 best_model.pth
+outputs/*
