@@ -1,9 +1,4 @@
-#!/usr/bin/env python3
 """
-build_centers.py - Pré-treinamento de centros de cor (LAB) para o módulo detect_lesions_kmeans
-Usa imagens do dataset de folhas (por exemplo, New Plant Diseases Dataset - Kaggle)
-e salva "centers_lab_global.npy" contendo os centros médios LAB (k_global x 3).
-
 Como usar:
   python build_centers.py --output centers_lab_global.npy
 """
@@ -20,9 +15,6 @@ from segmentation_kmeans import detect_lesions_kmeans
 DATASET_ROOT = Path("dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/new plant diseases dataset(augmented)/New Plant Diseases Dataset(Augmented)")
 
 
-# ============================================
-# Segmentador simples de folha (HSV range)
-# ============================================
 def segment_leaf_hsv(image_rgb):
     """Retorna máscara binária da folha"""
     hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
@@ -34,9 +26,7 @@ def segment_leaf_hsv(image_rgb):
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return mask
 
-# ============================================
-# Coleta de centros por imagem
-# ============================================
+
 def collect_lab_centers(image_path, k_local=3):
     img = cv2.imread(str(image_path))
     if img is None:
@@ -56,9 +46,7 @@ def collect_lab_centers(image_path, k_local=3):
     centers = km.cluster_centers_
     return centers  # (k_local, 3)
 
-# ============================================
-# Main
-# ============================================
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--output", type=str, default="centers_lab_global.npy", help="Arquivo de saída")

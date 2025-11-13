@@ -2,8 +2,9 @@
 """
 Detect lesions inside a leaf mask using KMeans clustering in LAB color space.
 
-Functions:
- - detect_lesions_kmeans(...)
+Função principal:
+ - detect_lesions_kmeans(orig_rgb_np, leaf_mask_uint8, ...)
+   -> retorna (lesion_mask, cluster_vis)
 """
 
 import numpy as np
@@ -39,17 +40,16 @@ def detect_lesions_kmeans(orig_rgb_np,
     """
     Detect lesions by clustering colors inside the leaf using KMeans (LAB space).
 
-    Returns:
-      lesion_mask (HxW uint8), cluster_map (HxW int), bbox [x,y,w,h], area_pct (float),
-      cluster_vis (HxW3 uint8 RGB), centers_lab (k x 3 float)
+    Retorna:
+      lesion_mask (HxW uint8 0/255), cluster_vis (HxWx3 uint8 RGB)
     """
     H, W = orig_rgb_np.shape[:2]
     leaf_idx = (leaf_mask_uint8 > 0)
+    # caso não haja folha detectada, retornamos máscara vazia + visualização igual à imagem original
     if leaf_idx.sum() == 0:
         empty_mask = np.zeros((H,W), dtype=np.uint8)
-        cluster_map = np.full((H,W), -1, dtype=np.int32)
-        cluster_vis = np.zeros((H,W,3), dtype=np.uint8)
-        return empty_mask, cluster_map, [0,0,0,0], 0.0, cluster_vis, None
+        cluster_vis = orig_rgb_np.copy() if orig_rgb_np is not None else np.zeros((H,W,3), dtype=np.uint8)
+        return empty_mask, cluster_vis
 
     # convert to LAB (uint8 -> float32)
     lab = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2LAB).astype(np.float32)
@@ -63,7 +63,6 @@ def detect_lesions_kmeans(orig_rgb_np,
     # fit or use pretrained centers
     if pretrained_centers is None:
         if use_minibatch:
-            # minibatch KMeans: faster for many pixels
             mb = MiniBatchKMeans(n_clusters=k, random_state=random_state, n_init=n_init)
             mb.fit(lab_scaled)
             labels = mb.predict(lab_scaled)
@@ -72,15 +71,10 @@ def detect_lesions_kmeans(orig_rgb_np,
             km = KMeans(n_clusters=k, random_state=random_state, n_init=n_init)
             labels = km.fit_predict(lab_scaled)
             centers_scaled = km.cluster_centers_
-        # recover centers in original LAB scale
         centers_lab = centers_scaled * std.reshape(1,3) + mean.reshape(1,3)
     else:
-        # pretrained_centers expected in LAB (k x 3)
-        # map each lab_leaf row to nearest center (Euclidean)
         centers_lab = np.asarray(pretrained_centers, dtype=np.float32)
-        # scale centers like lab_leaf scaling for distance
         centers_scaled = (centers_lab - mean.reshape(1,3)) / std.reshape(1,3)
-        # compute distances
         dif = lab_scaled[:,None,:] - centers_scaled[None,:,:]
         dists = np.linalg.norm(dif, axis=2)  # N x k
         labels = np.argmin(dists, axis=1)
@@ -89,8 +83,8 @@ def detect_lesions_kmeans(orig_rgb_np,
     cluster_map = np.full((H,W), -1, dtype=np.int32)
     cluster_map[leaf_idx] = labels
 
-    # determine healthy cluster: cluster with largest count
-    counts = np.bincount(labels, minlength=k)
+    # determine healthy cluster (maior cluster)
+    counts = np.bincount(labels, minlength=k if pretrained_centers is None else centers_lab.shape[0])
     healthy_cluster = int(np.argmax(counts))
 
     # lesion mask = leaf pixels with cluster != healthy_cluster
@@ -104,22 +98,9 @@ def detect_lesions_kmeans(orig_rgb_np,
         lesion_mask = cv2.morphologyEx(lesion_mask, cv2.MORPH_OPEN, kernel)
         lesion_mask = cv2.morphologyEx(lesion_mask, cv2.MORPH_CLOSE, kernel)
 
-    # keep largest
+    # keep largest component opcional
     if keep_largest:
         lesion_mask = _keep_largest_component_uint8(lesion_mask, min_area=min_area)
-
-    # bbox + area%
-    contours, _ = cv2.findContours(lesion_mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if len(contours) == 0:
-        bbox = [0,0,0,0]; area_pct = 0.0
-    else:
-        total_area = 0.0; xs=[]; ys=[]; xe=[]; ye=[]
-        for c in contours:
-            x,y,wc,hc = cv2.boundingRect(c)
-            xs.append(x); ys.append(y); xe.append(x+wc); ye.append(y+hc)
-            total_area += cv2.contourArea(c)
-        bbox = [int(min(xs)), int(min(ys)), int(max(xe)-min(xs)), int(max(ye)-min(ys))]
-        area_pct = 100.0 * (total_area / (H * W))
 
     # cluster visualization: map each cluster to its center color (LAB->RGB)
     cluster_vis = np.zeros((H,W,3), dtype=np.uint8)
@@ -127,9 +108,10 @@ def detect_lesions_kmeans(orig_rgb_np,
         # convert centers to uint8 LAB and then to RGB
         centers_lab_u8 = np.clip(centers_lab, 0, 255).astype(np.uint8).reshape(-1,1,3)
         centers_rgb = cv2.cvtColor(centers_lab_u8, cv2.COLOR_LAB2RGB).reshape(-1,3)
+        # se cluster_map tem -1 fora da folha, só atribuímos cores dentro da folha
         for cid in range(len(centers_rgb)):
             cluster_vis[cluster_map == cid] = centers_rgb[cid]
-    # fallback: show original for non-leaf
-    cluster_vis[leaf_mask_uint8 == 0] = orig_rgb_np[leaf_mask_uint8 == 0] if 'orig_rgb_np' in globals() else 0
+    # fallback: manter a imagem original fora da folha
+    cluster_vis[leaf_mask_uint8 == 0] = orig_rgb_np[leaf_mask_uint8 == 0]
 
-    return lesion_mask, cluster_map, bbox, area_pct, cluster_vis, centers_lab
+    return lesion_mask, cluster_vis

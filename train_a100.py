@@ -26,49 +26,45 @@ from torch.cuda.amp import autocast, GradScaler
 from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader
 
-# ------------------------
-# USER-EDITABLE CONFIG
-# ------------------------
-# Dataset: point to the directory that contains 'train' and 'valid' subfolders
+
 DATASET_ROOT = Path("dataset/datasets/vipoooool/new-plant-diseases-dataset/versions/2/new plant diseases dataset(augmented)/New Plant Diseases Dataset(Augmented)")
 
 WORK_DIR = Path("work_a100")
 WORK_DIR.mkdir(parents=True, exist_ok=True)
 
-# Model / training hyperparams
-BACKBONE = "efficientnet_b3"    # options: efficientnet_b3, efficientnet_b4, resnet50, convnext_tiny
-IMG_SIZE = 256                  # 224/256/320 might be good for A100
+# modelo /parametros de treino
+BACKBONE = "efficientnet_b3"    # options: efficientnet_b3, efficientnet_b4, resnet50, ate agora foi usado o e_b3 mas o resnet50 sera usado no prox treino
+IMG_SIZE = 256                  
 EPOCHS = 40
-BATCH_SIZE = 128                # start 64/128 for A100 (adjust)
+BATCH_SIZE = 128                # 128 deu um bom tempo pra a100, pra 2060 usar 16
 BASE_LR = 1e-3                  # base lr for reference batch (REF_BATCH below)
 REF_BATCH = 32                  # reference batch for linear scaling
 WEIGHT_DECAY = 1e-4
 MOMENTUM = 0.9
-ACCUMULATION_STEPS = 1          # set >1 to simulate bigger batch: effective_batch = BATCH_SIZE * ACCUMULATION_STEPS
-FREEZE_BACKBONE_EPOCHS = 0      # set >0 to freeze backbone for first N epochs
-USE_AMP = True                  # enable mixed precision (bfloat16 on A100 if available; else fp16)
+ACCUMULATION_STEPS = 1          
+FREEZE_BACKBONE_EPOCHS = 0      
+USE_AMP = True                  # habilita mixed precision (bfloat16 na A100 ; se nao tiver usar fp16)
 CLIP_GRAD_NORM = 1.0
 
-NUM_WORKERS = 8
+NUM_WORKERS = 8  
 PIN_MEMORY = True
 SEED = 42
 
-# Checkpointing
+
 CKPT_DIR = WORK_DIR / "checkpoints"
 CKPT_DIR.mkdir(parents=True, exist_ok=True)
 BEST_PATH = WORK_DIR / "best_model.pth"
 
-# Misc
+
 PRINT_FREQ = 1
 SAVE_EPOCH_FREQ = 1
-# ------------------------
 
-# reproducibility
+
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-# device & detect GPU model
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 if device == "cuda":
     try:
@@ -77,26 +73,20 @@ if device == "cuda":
         gpu_name = "unknown"
 else:
     gpu_name = "cpu"
-print(f"[+] Device: {device} ({gpu_name})")
+print(f"[+] placa: {device} ({gpu_name})")
 
-# bfloat16 availability check
+# bfloat16 check se esta disponivel
 USE_BFLOAT16 = False
 if device == "cuda" and "A100" in gpu_name.upper():
-    # A100 supports bfloat16 (hardware) and recent pytorch builds support autocast bfloat16
-    # We'll use bfloat16 if USE_AMP is True and PyTorch supports it
     try:
-        # Check if autocast accepts dtype=torch.bfloat16 in this build
         from torch.cuda.amp import autocast as _autocast
-        # This is a heuristic; assume bfloat16 available on A100
         USE_BFLOAT16 = True
     except Exception:
         USE_BFLOAT16 = False
 
 print(f"[+] USE_AMP={USE_AMP}, USE_BFLOAT16={USE_BFLOAT16}")
 
-# ------------------------
-# Data transforms & loaders
-# ------------------------
+#transformacao dos dados do dataset
 train_tf = transforms.Compose([
     transforms.RandomResizedCrop(IMG_SIZE),
     transforms.RandomHorizontalFlip(),
@@ -129,9 +119,8 @@ val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False,
 num_classes = len(train_ds.classes)
 print(f"[+] Dataset: {len(train_ds)} train imgs, {len(val_ds)} val imgs, {num_classes} classes")
 
-# ------------------------
-# Model builder
-# ------------------------
+
+# montar o modelo usando arquiteturas padrao
 def build_model(backbone_name: str, num_classes: int):
     backbone_name = backbone_name.lower()
     if backbone_name.startswith("efficientnet_b3"):
@@ -147,7 +136,6 @@ def build_model(backbone_name: str, num_classes: int):
         in_features = model.classifier[2].in_features
         model.classifier[2] = nn.Linear(in_features, num_classes)
     else:
-        # fallback to resnet50
         model = models.resnet50(pretrained=True)
         in_features = model.fc.in_features
         model.fc = nn.Linear(in_features, num_classes)
@@ -163,16 +151,13 @@ if FREEZE_BACKBONE_EPOCHS > 0:
         if ("classifier" not in name) and ("fc" not in name):
             p.requires_grad = False
 
-# ------------------------
-# Optimizer & Scheduler (OneCycleLR)
-# ------------------------
-# linear scaling for lr
+
 effective_batch = BATCH_SIZE * ACCUMULATION_STEPS
 effective_lr = BASE_LR * (effective_batch / REF_BATCH)
 optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
                         lr=effective_lr, weight_decay=WEIGHT_DECAY)
 
-# OneCycleLR: need steps_per_epoch
+
 steps_per_epoch = max(1, len(train_loader))
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
@@ -188,10 +173,10 @@ print(f"[+] OneCycleLR steps_per_epoch={steps_per_epoch}, epochs={EPOCHS}")
 
 criterion = nn.CrossEntropyLoss()
 
-# amp scaler
+
 scaler = GradScaler(enabled=(USE_AMP and not USE_BFLOAT16))
 
-# training helpers
+
 def evaluate(model, loader, device):
     model.eval()
     correct = 0
@@ -227,7 +212,8 @@ for epoch in range(1, EPOCHS + 1):
     running_correct = 0
     running_total = 0
 
-    # optionally unfreeze after freeze period
+ 
+    
     if FREEZE_BACKBONE_EPOCHS > 0 and epoch == FREEZE_BACKBONE_EPOCHS + 1:
         print("[*] Unfreezing backbone parameters.")
         for p in model.parameters():
@@ -250,7 +236,7 @@ for epoch in range(1, EPOCHS + 1):
         imgs = imgs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
-        # Mixed precision: choose autocast dtype
+      
         if USE_AMP:
             ctx = autocast(enabled=True, dtype=autocast_dtype)
         else:
@@ -260,7 +246,6 @@ for epoch in range(1, EPOCHS + 1):
             outputs = model(imgs)
             loss = criterion(outputs, labels) / ACCUMULATION_STEPS
 
-        # scale & backward (if using GradScaler)
         if USE_AMP and not USE_BFLOAT16:
             scaler.scale(loss).backward()
         else:
@@ -314,10 +299,10 @@ for epoch in range(1, EPOCHS + 1):
     t1 = time.time()
     print(f"Epoch {epoch} summary: train_acc={epoch_train_acc:.4f}, val_acc={val_acc:.4f}, val_loss={val_loss:.4f}, time={(t1-t0):.1f}s")
 
-# final report
-print(f"Training finished. Best val_acc = {best_val_acc:.4f}. Best model at {BEST_PATH}")
 
-# Save training metadata
+print(f"Treinamento finalizado. Best val_acc = {best_val_acc:.4f}. Best model at {BEST_PATH}")
+
+
 meta = {
     "best_val_acc": float(best_val_acc),
     "num_classes": num_classes,

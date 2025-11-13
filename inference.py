@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-app.py - FastAPI inference server (classificação + detecção por inversão de cor)
-Detecta doença invertendo as áreas saudáveis (baseado em cor dominante da folha).
-Salva cópias locais para debug:
- - original.png
- - leaf_mask.png
- - healthy_mask.png
- - disease_mask.png
- - overlay.png
-"""
-
 import io, base64, os, datetime
 from pathlib import Path
 import numpy as np
@@ -20,12 +8,9 @@ from torchvision import transforms, models
 from PIL import Image
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
-import uvicorn
 import segmentation_kmeans
 
-# ===============================
-# CONFIGURAÇÕES
-# ===============================
+
 MODEL_PATH = Path("work/best_model_a100.pth")
 USE_CUDA = True
 IMG_SIZE = 224
@@ -33,7 +18,7 @@ IMG_SIZE = 224
 HSV_LOWER = np.array([20, 40, 30], dtype=np.uint8)
 HSV_UPPER = np.array([100, 255, 255], dtype=np.uint8)
 
-HEALTHY_PERCENTILE = 60  # quanto menor, mais sensível à doença
+HEALTHY_PERCENTILE = 60  
 GAUSSIAN_BLUR_K = 5
 MORPH_KERNEL = 5
 MIN_COMPONENT_AREA = 100
@@ -41,13 +26,11 @@ MIN_COMPONENT_AREA = 100
 OUTPUT_DIR = Path("outputs")
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# ===============================
-app = FastAPI(title="Plant Disease Detector - Inverted Color Analysis")
+
+app = FastAPI(title="Plant Disease Detector ")
 device = "cuda" if (torch.cuda.is_available() and USE_CUDA) else "cpu"
 
-# ------------------------------
-# MODELO
-# ------------------------------
+
 def load_checkpoint(path: Path):
     if not path.exists():
         raise FileNotFoundError(f"Checkpoint não encontrado em {path}")
@@ -72,9 +55,7 @@ model = model.to(device).eval()
 
 print(f"[+] Modelo carregado com {len(class_to_idx)} classes. Device: {device}")
 
-# ------------------------------
-# TRANSFORMAÇÃO
-# ------------------------------
+
 transform = transforms.Compose([
     transforms.Resize(256),
     transforms.CenterCrop(IMG_SIZE),
@@ -86,9 +67,7 @@ transform = transforms.Compose([
 def preprocess(img: Image.Image):
     return transform(img.convert("RGB")).unsqueeze(0)
 
-# ------------------------------
-# UTILIDADES
-# ------------------------------
+
 def save_image_local(path, np_img):
     cv2.imwrite(str(path), cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR))
 
@@ -113,9 +92,7 @@ def pil_to_b64_png(arr):
     pil.save(buf, format="PNG")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-# ------------------------------
-# SEGMENTAÇÃO DE FOLHA
-# ------------------------------
+
 def segment_leaf_hsv(orig_rgb_np):
     hsv = cv2.cvtColor(orig_rgb_np, cv2.COLOR_RGB2HSV)
     mask = cv2.inRange(hsv, HSV_LOWER, HSV_UPPER)
@@ -125,17 +102,13 @@ def segment_leaf_hsv(orig_rgb_np):
     return keep_largest_component_uint8(mask, min_area=500)
 
 
-
-# ------------------------------
-# ENDPOINT /predict
-# ------------------------------
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out_dir = OUTPUT_DIR / timestamp
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # abre imagem
+   
     try:
         image_bytes = await file.read()
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -156,46 +129,42 @@ async def predict(file: UploadFile = File(...)):
 
     plant, disease = label.split("___", 1) if "___" in label else ("unknown", label)
 
-    # segmentação da folha
+   
     leaf_mask = segment_leaf_hsv(orig_np)
     save_image_local(out_dir / "leaf_mask.png", np.stack([leaf_mask]*3, axis=-1))
 
-    # tenta carregar centers pré-treinados; se não existir, faz fit local
+    
     pretrained_centers = None
     try:
         pretrained_centers = np.load("centers_lab_global.npy")
         use_minibatch = False
         k_for_call = len(pretrained_centers)
     except Exception:
-        # arquivo não encontrado ou erro ao carregar -> teremos fit por imagem (k padrão)
+       
         pretrained_centers = None
         use_minibatch = True
-        k_for_call = 3  # valor padrão (pode ajustar)
+        k_for_call = 3  
         print("[!] centers_lab_global.npy não encontrado — usando KMeans por imagem (fit local).")
 
-    # chama a função do módulo; descartamos os retornos que não usamos com '_'
-    lesion_mask, cluster_map, bbox, area_pct, cluster_vis, centers_lab = segmentation_kmeans.detect_lesions_kmeans(
-        orig_np,
-        leaf_mask,
-        k=k_for_call,
-        use_minibatch=use_minibatch,
-        pretrained_centers=pretrained_centers
-    )
+   
+    lesion_mask, cluster_vis = segmentation_kmeans.detect_lesions_kmeans(
+    orig_np, leaf_mask, k=k_for_call, use_minibatch=use_minibatch, pretrained_centers=pretrained_centers)
 
-    # compute damage relative to leaf
+
+   
     damage_on_leaf = int(((lesion_mask>0) & (leaf_mask>0)).sum())
     leaf_area = int((leaf_mask>0).sum())
     damage_pct_of_leaf = 100.0 * damage_on_leaf / leaf_area if leaf_area>0 else 0.0
 
-    # save debug images:
+
     save_image_local(out_dir/"cluster_vis.png", cluster_vis)
     save_image_local(out_dir/"lesion_mask.png", np.stack([lesion_mask]*3, axis=-1))
 
-    # base64
+   
     leaf_b64 = pil_to_b64_png(np.stack([leaf_mask]*3, axis=-1))
     cluster_vis_b64 = pil_to_b64_png(cluster_vis)
 
-    # resposta
+  
     return JSONResponse({
         "plant": plant,
         "disease": disease,
@@ -205,5 +174,3 @@ async def predict(file: UploadFile = File(...)):
         "damage_amount": damage_pct_of_leaf
     })
 
-# if __name__ == "__main__":
-#     uvicorn.run(app, host="0.0.0.0", port=8080)
