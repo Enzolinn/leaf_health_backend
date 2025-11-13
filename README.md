@@ -4,7 +4,7 @@ Este projeto utiliza **redes neurais convolucionais (CNNs)** e **análise não s
 O sistema é dividido em dois módulos principais:
 
 1. **Treinamento de modelo de classificação** (`train_a100.py`)
-2. **Inferência e segmentação da folha** (`app.py` + `segmentation_kmeans.py`)
+2. **Inferência e segmentação da folha** (`inference.py` + `segmentation_kmeans.py`)
 
 ---
 
@@ -92,7 +92,7 @@ O `GradScaler` ajusta dinamicamente a escala dos gradientes para evitar perdas d
 
 ## 2. Inferência e Segmentação (Detecção de Lesões)
 
-Após o treinamento, o modelo é usado no servidor FastAPI (`app.py`) para receber uma **imagem de folha**, identificar a **doença**, e gerar **máscaras de lesões**.
+Após o treinamento, o modelo é usado no servidor FastAPI (`inference.py`) para receber uma **imagem de folha**, identificar a **doença**, e gerar **máscaras de lesões**.
 
 ---
 
